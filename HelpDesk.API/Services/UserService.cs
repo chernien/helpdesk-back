@@ -4,6 +4,7 @@ using HelpDesk.API.Exceptions;
 using HelpDesk.API.Models;
 using HelpDesk.API.Repositories;
 using System.Net.Mail;
+using System.Text.Json;
 
 namespace HelpDesk.API.Services;
 
@@ -11,6 +12,7 @@ public interface IUserService
 {
     Task<UserPageDto> RechercherAsync(string? role, string? recherche, int page, int pageSize);
     Task<UserDto> GetByIdAsync(int id);
+    Task<PerimetreClientDto> PerimetreParEmailAsync(string email);
     Task<List<CollaborateurDto>> CollaborateursDuProduitAsync(string produit);
     Task<UserDto> CreateAsync(CreateUserRequest request);
     Task<UserDto> CreerCompteContactAsync(CreerCompteContactRequest request);
@@ -25,13 +27,60 @@ public class UserService : IUserService
     private readonly IUserRepository _userRepository;
     private readonly IProduitRepository _produitRepository;
     private readonly IClientService _clientService;
+    private readonly IModuleRepository _moduleRepository;
 
-    public UserService(IUserRepository userRepository, IProduitRepository produitRepository, IClientService clientService)
+    public UserService(IUserRepository userRepository, IProduitRepository produitRepository,
+        IClientService clientService, IModuleRepository moduleRepository)
     {
         _userRepository = userRepository;
         _produitRepository = produitRepository;
         _clientService = clientService;
+        _moduleRepository = moduleRepository;
     }
+
+    /// <summary>
+    /// Périmètre d'un client : enregistré dans la table d'affectation existante
+    /// (produit + version + liste de modules séparés par des virgules).
+    /// </summary>
+    private async Task AppliquerPerimetreClientAsync(Authentication user, List<PerimetreLigneDto> lignes, List<string> modules)
+    {
+        // Produits (+ version) → table d'affectation.
+        var nouvelles = new List<AffectationAuthenticationProduit>();
+        foreach (var l in lignes.Where(x => !string.IsNullOrWhiteSpace(x.Produit)))
+        {
+            var produit = await _produitRepository.GetByNomAsync(l.Produit.Trim());
+            if (produit == null) continue;                                   // produit inconnu : ignoré
+            if (nouvelles.Any(a => a.ProductId == produit.ProductId)) continue; // clé (UserId, ProductId) unique
+            nouvelles.Add(new AffectationAuthenticationProduit
+            {
+                ProductId = produit.ProductId,
+                User = user,
+                Version = string.IsNullOrWhiteSpace(l.Version) ? null : l.Version.Trim()
+            });
+        }
+        foreach (var a in user.Affectations.ToList()) user.Affectations.Remove(a);
+        foreach (var a in nouvelles) user.Affectations.Add(a);
+
+        // Modules → au niveau du client (colonne Authentication.Modules) : uniquement des modules de la base,
+        // enregistrés sous leur nom exact (« reglement » → « Règlement »).
+        var catalogue = await _moduleRepository.NomsAsync();
+        var mods = new List<string>();
+        var inconnus = new List<string>();
+        foreach (var m in (modules ?? new List<string>()).Select(m => m.Trim()).Where(m => m.Length > 0))
+        {
+            var nom = catalogue.FirstOrDefault(b => string.Equals(SansAccents(b), SansAccents(m), StringComparison.OrdinalIgnoreCase));
+            if (nom == null) inconnus.Add(m);
+            else if (!mods.Contains(nom)) mods.Add(nom);
+        }
+        if (inconnus.Count > 0)
+            throw new MetierException($"Module(s) inconnu(s) : {string.Join(", ", inconnus)}. Ajoutez-les d'abord à la liste des modules (bouton « + »).");
+        user.Modules = mods.Count > 0 ? string.Join(",", mods) : null;
+    }
+
+    private static string SansAccents(string s) =>
+        new string(s.Trim().Normalize(System.Text.NormalizationForm.FormD)
+            .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+            .ToArray());
 
     public async Task<UserPageDto> RechercherAsync(string? role, string? recherche, int page, int pageSize)
     {
@@ -45,7 +94,38 @@ public class UserService : IUserService
     {
         var user = await _userRepository.GetAvecProduitsAsync(id)
             ?? throw MetierException.Introuvable("Utilisateur introuvable.");
-        return ToDto(user);
+        var dto = ToDto(user);
+        if (user.Role == Roles.Client)
+        {
+            dto.Perimetre = user.Affectations.Select(a => new PerimetreLigneDto
+            {
+                Produit = a.Product.Nom,
+                Version = a.Version
+            }).ToList();
+            dto.Modules = string.IsNullOrWhiteSpace(user.Modules)
+                ? new List<string>()
+                : user.Modules.Split(',').Select(m => m.Trim()).Where(m => m.Length > 0).ToList();
+        }
+        return dto;
+    }
+
+    /// <summary>
+    /// Périmètre (produits + modules) du compte client portant cet email.
+    /// Listes vides si aucun compte, pas un client, ou aucun périmètre affecté (= tout autorisé).
+    /// </summary>
+    public async Task<PerimetreClientDto> PerimetreParEmailAsync(string email)
+    {
+        var dto = new PerimetreClientDto();
+        if (string.IsNullOrWhiteSpace(email)) return dto;
+
+        var user = await _userRepository.GetAvecProduitsParEmailAsync(email);
+        if (user == null || user.Role != Roles.Client) return dto;
+
+        dto.Produits = user.Affectations.Select(a => a.Product.Nom).ToList();
+        dto.Modules = string.IsNullOrWhiteSpace(user.Modules)
+            ? new List<string>()
+            : user.Modules.Split(',').Select(m => m.Trim()).Where(m => m.Length > 0).ToList();
+        return dto;
     }
 
     public async Task<List<CollaborateurDto>> CollaborateursDuProduitAsync(string produit)
@@ -82,7 +162,11 @@ public class UserService : IUserService
         };
 
         if (request.Role == Roles.Client)
-            await AppliquerSocieteAsync(user, request.ClientTiers);
+        {
+            await AppliquerSocietesAsync(user, request.SocietesTiers, request.ClientTiers);
+            await AppliquerPerimetreClientAsync(user, request.Perimetre, request.Modules);
+            user.AdminSociete = request.AdminSociete;
+        }
 
         if (Roles.AvecProduits.Contains(request.Role))
             await AppliquerProduitsAsync(user, request.ProduitIds);
@@ -109,6 +193,9 @@ public class UserService : IUserService
         var contact = await _clientService.TrouverContactAsync(request.ClientTiers.Trim(), request.Email.Trim())
             ?? throw new MetierException("Ce contact n'appartient pas à la société sélectionnée.");
 
+        // Administrateur de sa société si « Profil Admin helpdesk » est coché sur son contact dans Divalto.
+        var tiersAdmin = await _clientService.TiersAdminAsync(contact.Email);
+
         return await CreateAsync(new CreateUserRequest
         {
             Role = Roles.Client,
@@ -116,7 +203,8 @@ public class UserService : IUserService
             Nom = request.Nom,
             Prenom = request.Prenom,
             Password = request.Password,
-            ClientTiers = request.ClientTiers.Trim()
+            ClientTiers = request.ClientTiers.Trim(),
+            AdminSociete = tiersAdmin.Contains(request.ClientTiers.Trim(), StringComparer.OrdinalIgnoreCase)
         });
     }
 
@@ -134,10 +222,18 @@ public class UserService : IUserService
         if (id == adminId && !request.Enabled)
             throw new MetierException("Vous ne pouvez pas désactiver votre propre compte.");
 
+        // Rôle : modifiable. Vide = inchangé. On empêche un admin de changer SON PROPRE rôle (risque de blocage).
+        var nouveauRole = string.IsNullOrWhiteSpace(request.Role) ? (user.Role ?? "") : request.Role.Trim();
+        if (!Roles.Tous.Contains(nouveauRole))
+            throw new MetierException("Rôle invalide.");
+        if (id == adminId && nouveauRole != user.Role)
+            throw new MetierException("Vous ne pouvez pas changer votre propre rôle.");
+
         user.Username = email;
         user.Nom = request.Nom.Trim();
         user.Prenom = request.Prenom.Trim();
         user.Enabled = request.Enabled;
+        user.Role = nouveauRole;
 
         if (!string.IsNullOrEmpty(request.Password))
         {
@@ -145,11 +241,28 @@ public class UserService : IUserService
             user.Password = BCrypt.Net.BCrypt.HashPassword(request.Password);
         }
 
-        if (user.Role == Roles.Client)
-            await AppliquerSocieteAsync(user, request.ClientTiers);
+        // Données propres au rôle, reconstruites selon le NOUVEAU rôle (changement de rôle géré proprement).
+        if (nouveauRole == Roles.Client)
+        {
+            await AppliquerSocietesAsync(user, request.SocietesTiers, request.ClientTiers);
+            await AppliquerPerimetreClientAsync(user, request.Perimetre, request.Modules);
+            user.AdminSociete = request.AdminSociete;
+        }
+        else
+        {
+            // Plus un client : on efface société, modules et statut d'administrateur de société.
+            user.ClientTiers = null;
+            user.SocieteNom = null;
+            user.Societes = null;
+            user.Modules = null;
+            user.AdminSociete = false;
 
-        if (Roles.AvecProduits.Contains(user.Role ?? ""))
-            await AppliquerProduitsAsync(user, request.ProduitIds);
+            if (Roles.AvecProduits.Contains(nouveauRole))
+                await AppliquerProduitsAsync(user, request.ProduitIds);
+            else
+                // ADMIN : aucune affectation produit.
+                foreach (var a in user.Affectations.ToList()) user.Affectations.Remove(a);
+        }
 
         await _userRepository.SaveChangesAsync();
         return await GetByIdAsync(id);
@@ -186,17 +299,51 @@ public class UserService : IUserService
 
     // ---------- Regles ----------
 
-    private async Task AppliquerSocieteAsync(Authentication user, string? tiers)
+    /// <summary>
+    /// Rattache une ou plusieurs sociétés au client. Chaque code tiers est relu dans Divalto
+    /// (on ne fait pas confiance au nom envoyé). La 1re société devient la société principale
+    /// (ClientTiers/SocieteNom) ; la liste complète est stockée en JSON dans Societes.
+    /// </summary>
+    private async Task AppliquerSocietesAsync(Authentication user, List<string> tiersListe, string? tiersPrincipal)
     {
-        if (string.IsNullOrWhiteSpace(tiers))
-            throw new MetierException("La société du client est requise.");
+        // Compat : si aucune liste n'est fournie, on retombe sur le code principal unique.
+        var codes = (tiersListe ?? new List<string>())
+            .Select(t => t?.Trim() ?? "").Where(t => t.Length > 0).ToList();
+        if (codes.Count == 0 && !string.IsNullOrWhiteSpace(tiersPrincipal))
+            codes.Add(tiersPrincipal.Trim());
 
-        // On ne fait pas confiance au nom envoye : il est relu dans Divalto.
-        var societe = await _clientService.TrouverSocieteAsync(tiers.Trim())
-            ?? throw new MetierException("Cette société n'existe pas dans Divalto.");
+        if (codes.Count == 0)
+            throw new MetierException("Au moins une société est requise pour un client.");
 
-        user.ClientTiers = societe.Tiers;
-        user.SocieteNom = societe.Nom;
+        var societes = new List<SocieteClientDto>();
+        foreach (var code in codes.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var societe = await _clientService.TrouverSocieteAsync(code)
+                ?? throw new MetierException($"La société « {code} » n'existe pas dans Divalto.");
+            if (societes.All(s => !string.Equals(s.Tiers, societe.Tiers, StringComparison.OrdinalIgnoreCase)))
+                societes.Add(societe);
+        }
+
+        user.Societes = JsonSerializer.Serialize(societes);
+        user.ClientTiers = societes[0].Tiers;   // société principale = la première
+        user.SocieteNom = societes[0].Nom;
+    }
+
+    /// <summary>Sociétés rattachées à un client (JSON Societes ; repli sur la société principale).</summary>
+    public static List<SocieteClientDto> SocietesDe(Authentication u)
+    {
+        if (!string.IsNullOrWhiteSpace(u.Societes))
+        {
+            try
+            {
+                var liste = JsonSerializer.Deserialize<List<SocieteClientDto>>(u.Societes);
+                if (liste is { Count: > 0 }) return liste;
+            }
+            catch (JsonException) { /* données anciennes/corrompues : repli ci-dessous */ }
+        }
+        return string.IsNullOrWhiteSpace(u.ClientTiers)
+            ? new List<SocieteClientDto>()
+            : new List<SocieteClientDto> { new() { Tiers = u.ClientTiers, Nom = u.SocieteNom ?? u.ClientTiers } };
     }
 
     private async Task AppliquerProduitsAsync(Authentication user, List<int> produitIds)
@@ -248,6 +395,8 @@ public class UserService : IUserService
         Enabled = u.Enabled,
         ClientTiers = u.ClientTiers,
         SocieteNom = u.SocieteNom,
+        Societes = SocietesDe(u),
+        AdminSociete = u.Role == Roles.Client && u.AdminSociete,
         NombreConnexion = u.NombreConnexion,
         DateCreation = u.DateCreation,
         Produits = u.Affectations

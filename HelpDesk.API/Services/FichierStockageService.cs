@@ -4,6 +4,8 @@ public interface IFichierStockage
 {
     /// <summary>Enregistre le fichier sur disque et retourne son nom de stockage (anonyme).</summary>
     Task<string> EnregistrerAsync(IFormFile fichier);
+    /// <summary>Enregistre des octets (ex. pièce jointe d'un e-mail) et retourne le nom de stockage.</summary>
+    Task<string> EnregistrerAsync(byte[] contenu, string nomOrigine);
     /// <summary>Ouvre un fichier stocké, ou null s'il n'existe plus.</summary>
     Stream? Ouvrir(string nomStockage);
     void Supprimer(string? nomStockage);
@@ -35,6 +37,17 @@ public class FichierStockageDisque : IFichierStockage
         var nomStockage = Guid.NewGuid().ToString("N") + extension.ToLowerInvariant();
         await using var flux = File.Create(Path.Combine(_dossier, nomStockage));
         await fichier.CopyToAsync(flux);
+        return nomStockage;
+    }
+
+    public async Task<string> EnregistrerAsync(byte[] contenu, string nomOrigine)
+    {
+        var extension = Path.GetExtension(nomOrigine ?? "");
+        if (extension.Length > 10 || extension.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            extension = "";
+
+        var nomStockage = Guid.NewGuid().ToString("N") + extension.ToLowerInvariant();
+        await File.WriteAllBytesAsync(Path.Combine(_dossier, nomStockage), contenu);
         return nomStockage;
     }
 

@@ -7,6 +7,15 @@ public class SocieteClientDto
     public string Nom { get; set; } = null!;
 }
 
+/// <summary>Société Divalto (CLI) avec le produit et la version renseignés sur la fiche client (U_PRODUIT, U_VERSION).</summary>
+public class SocieteDivaltoDto
+{
+    public string Tiers { get; set; } = null!;
+    public string Nom { get; set; } = null!;
+    public string? Produit { get; set; }
+    public string? Version { get; set; }
+}
+
 /// <summary>Contact d'une societe (table Divalto T2).</summary>
 public class ContactClientDto
 {

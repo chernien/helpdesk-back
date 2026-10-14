@@ -72,4 +72,23 @@ public partial class TicketList
     public string? Resolution { get; set; }
 
     public DateTime? DateEnattente { get; set; }
+
+    /// <summary>
+    /// Message-ID RFC de l'e-mail d'origine (quand le ticket est créé depuis la boîte mail).
+    /// Identique pour tous les destinataires To/CC : permet à toute l'équipe de voir que
+    /// cet e-mail est déjà transformé en ticket et d'éviter les doublons.
+    /// </summary>
+    public string? EmailMessageId { get; set; }
+
+    /// <summary>Identifiant du fil (References/In-Reply-To racine) : dédoublonne réponses et transferts.</summary>
+    public string? EmailThreadId { get; set; }
+
+    /// <summary>Expéditeur de l'e-mail d'origine (rapprochement heuristique si Message-ID différent).</summary>
+    public string? EmailExpediteur { get; set; }
+
+    /// <summary>Objet normalisé de l'e-mail d'origine (rapprochement heuristique).</summary>
+    public string? EmailObjet { get; set; }
+
+    /// <summary>Date d'envoi de l'e-mail d'origine (identique pour toutes les copies d'un même envoi).</summary>
+    public DateTime? EmailDate { get; set; }
 }

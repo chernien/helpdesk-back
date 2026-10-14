@@ -9,6 +9,10 @@ public interface IClientService
     Task<List<ContactClientDto>> ContactsAsync(string tiers);
     Task<ContactSocieteDto?> TrouverContactAsync(string tiers, string email);
     Task<SocieteClientDto?> TrouverSocieteAsync(string tiers);
+    Task<SocieteClientDto?> TrouverSocieteParEmailAsync(string email);
+    Task<List<SocieteDivaltoDto>> SocietesParEmailAsync(string email);
+    /// <summary>Sociétés (codes tiers) où ce contact a « Profil Admin helpdesk » coché dans Divalto (T2.U_FLAG_ADMIN = 2).</summary>
+    Task<List<string>> TiersAdminAsync(string email);
 }
 
 public class ClientService : IClientService
@@ -45,4 +49,15 @@ public class ClientService : IClientService
 
     public Task<SocieteClientDto?> TrouverSocieteAsync(string tiers) =>
         _clientRepository.TrouverSocieteAsync(_dossier, tiers);
+
+    /// <summary>Societe dont un contact (T2) porte cet email : pre-remplit un ticket cree depuis un e-mail.</summary>
+    public Task<SocieteClientDto?> TrouverSocieteParEmailAsync(string email) =>
+        _clientRepository.TrouverSocieteParEmailAsync(_dossier, email);
+
+    /// <summary>Sociétés Divalto du contact qui porte cet e-mail (vide = inconnu dans Divalto).</summary>
+    public Task<List<SocieteDivaltoDto>> SocietesParEmailAsync(string email) =>
+        _clientRepository.SocietesParEmailAsync(_dossier, email);
+
+    public async Task<List<string>> TiersAdminAsync(string email) =>
+        string.IsNullOrWhiteSpace(email) ? new List<string>() : await _clientRepository.TiersAdminParEmailAsync(_dossier, email);
 }

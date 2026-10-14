@@ -1,5 +1,6 @@
 using HelpDesk.API.Data;
 using HelpDesk.API.Exceptions;
+using Microsoft.AspNetCore.DataProtection;
 using HelpDesk.API.Hubs;
 using HelpDesk.API.Repositories;
 using HelpDesk.API.Services;
@@ -21,13 +22,38 @@ builder.Services.AddScoped<ITicketRepository, TicketRepository>();
 builder.Services.AddScoped<IProduitRepository, ProduitRepository>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.AddScoped<IClientRepository, ClientRepository>();
+builder.Services.AddScoped<IMessageRepository, MessageRepository>();
+builder.Services.AddScoped<IModuleRepository, ModuleRepository>();
+builder.Services.AddScoped<IMessageService, MessageService>();
+// Résumé quotidien des discussions par e-mail (singleton + tâche de fond ; exposé pour un déclenchement manuel).
+builder.Services.AddSingleton<DigestDiscussionService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DigestDiscussionService>());
+// Agent IA e-mail → ticket (par utilisateur, optionnel : actif seulement si une clé IA est configurée).
+builder.Services.AddSingleton<QuotaModelesIa>();
+builder.Services.AddSingleton<CatalogueOpenRouter>();
+builder.Services.AddScoped<AgentIaService>();
+builder.Services.AddSingleton<AgentStatistiques>();
+builder.Services.AddHostedService<AgentEmailService>();
 builder.Services.AddScoped<IClientService, ClientService>();
 builder.Services.AddSingleton<IFichierStockage, FichierStockageDisque>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IProduitService, ProduitService>();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IUtilisateurContexteService, UtilisateurContexteService>();
+
+// --- Boîte mail : Graph (partagée) + IMAP/SMTP (par utilisateur) ---
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<GraphMailService>();
+builder.Services.AddScoped<IMailboxRepository, MailboxRepository>();
+builder.Services.AddScoped<IMailboxService, MailboxService>();
+builder.Services.AddScoped<IMailboxResolver, MailboxResolver>();
+// Chiffrement des mots de passe de boîtes mail (clés persistées sur disque).
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(
+        Path.Combine(builder.Environment.ContentRootPath, "App_Data", "dataprotection-keys")));
+
 
 // --- Authentification JWT ---
 // Les secrets ne sont jamais dans appsettings.json (publie sur GitHub) :

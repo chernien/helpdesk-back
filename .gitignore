@@ -1,3 +1,13 @@
-# Python (recettes)
+﻿# Python (recettes)
 __pycache__/
 tests/act_ids.json
+
+# .NET : compilation et fichiers locaux
+bin/
+obj/
+.vs/
+*.user
+
+# Données et configuration locales (jamais publiées)
+HelpDesk.API/App_Data/
+HelpDesk.API/appsettings.Development.json

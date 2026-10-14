@@ -5,3 +5,8 @@ public class ProduitDto
     public int ProductId { get; set; }
     public string Nom { get; set; } = null!;
 }
+
+public class ProduitCreateRequest
+{
+    public string Nom { get; set; } = null!;
+}

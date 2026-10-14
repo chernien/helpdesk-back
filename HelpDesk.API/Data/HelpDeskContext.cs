@@ -32,6 +32,7 @@ public partial class HelpDeskContext : DbContext
 
             entity.Property(e => e.ProductId).HasColumnName("ProductID");
             entity.Property(e => e.UserId).HasColumnName("UserID");
+            entity.Property(e => e.Version).HasMaxLength(50);
 
             entity.HasOne(d => d.Product).WithMany()
                 .HasForeignKey(d => d.ProductId)
@@ -60,6 +61,8 @@ public partial class HelpDeskContext : DbContext
                 .HasMaxLength(50)
                 .IsUnicode(false);
             entity.Property(e => e.Username).HasMaxLength(255);
+            entity.Property(e => e.Modules).HasColumnType("nvarchar(max)");
+            entity.Property(e => e.Societes).HasColumnType("nvarchar(max)");
             entity.Property(e => e.Prenom).HasMaxLength(100);
             entity.Property(e => e.ClientTiers).HasMaxLength(20).IsUnicode(false);
             entity.Property(e => e.SocieteNom).HasMaxLength(100);
@@ -143,6 +146,11 @@ public partial class HelpDeskContext : DbContext
             entity.Property(e => e.Version)
                 .HasMaxLength(80)
                 .IsUnicode(false);
+            entity.Property(e => e.EmailMessageId).HasMaxLength(512);
+            entity.Property(e => e.EmailThreadId).HasMaxLength(512);
+            entity.Property(e => e.EmailExpediteur).HasMaxLength(320);
+            entity.Property(e => e.EmailObjet).HasMaxLength(500);
+            entity.Property(e => e.EmailDate).HasColumnType("datetime");
         });
 
         OnModelCreatingPartial(modelBuilder);

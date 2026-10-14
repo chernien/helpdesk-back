@@ -60,8 +60,19 @@ public class NotificationRepository : INotificationRepository
             return query.Where(n => n.CollaborateurId == user.Id);
 
         if (user.EstClient)
-            return query.Where(n => n.ClientId == user.Id ||
-                                    (n.ClientId == null && n.ClientEmail != null && n.ClientEmail.Trim().ToLower() == user.Email.ToLower()));
+        {
+            var userId = user.Id;
+            var email = user.Email.ToLower();
+            // Société consultée : les événements de cette société ; tous si administrateur, sinon les siens.
+            if (!string.IsNullOrEmpty(user.SocieteActive))
+            {
+                var societe = user.SocieteActive;
+                query = query.Where(n => n.ClientNom != null && n.ClientNom.Trim() == societe);
+                if (user.EstAdminDe(societe)) return query;
+            }
+            return query.Where(n => n.ClientId == userId ||
+                                    (n.ClientId == null && n.ClientEmail != null && n.ClientEmail.Trim().ToLower() == email));
+        }
 
         return query.Where(_ => false);
     }

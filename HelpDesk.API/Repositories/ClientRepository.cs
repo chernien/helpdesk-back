@@ -15,6 +15,17 @@ public interface IClientRepository
     Task<List<ContactClientDto>> ContactsAsync(string dossier, string tiers);
     Task<ContactSocieteDto?> TrouverContactAsync(string dossier, string tiers, string email);
     Task<SocieteClientDto?> TrouverSocieteAsync(string dossier, string tiers);
+    Task<SocieteClientDto?> TrouverSocieteParEmailAsync(string dossier, string email);
+    /// <summary>
+    /// Toutes les sociétés (CLI) dont un contact (T2) — ou la fiche client elle-même (CLI.EMAIL) — porte cet e-mail,
+    /// avec le produit / la version de la fiche client. Un contact peut avoir plusieurs sociétés.
+    /// </summary>
+    Task<List<SocieteDivaltoDto>> SocietesParEmailAsync(string dossier, string email);
+    /// <summary>
+    /// Codes tiers des sociétés où le contact (T2) portant cet e-mail a « Profil Admin helpdesk » coché
+    /// dans Divalto (case à cocher Divalto : U_FLAG_ADMIN = 2 coché, toute autre valeur = non coché).
+    /// </summary>
+    Task<List<string>> TiersAdminParEmailAsync(string dossier, string email);
 }
 
 public class ClientRepository : IClientRepository
@@ -80,4 +91,42 @@ public class ClientRepository : IClientRepository
 
         return resultats.FirstOrDefault();
     }
+
+    public async Task<SocieteClientDto?> TrouverSocieteParEmailAsync(string dossier, string email)
+    {
+        var resultats = await _context.Database.SqlQuery<SocieteClientDto>($"""
+            SELECT TOP (1) RTRIM(c.TIERS) AS Tiers, RTRIM(c.NOM) AS Nom
+            FROM CLI c
+            JOIN T2 t ON t.TIERS = c.TIERS AND t.DOS = c.DOS
+            WHERE c.DOS = {dossier}
+              AND RTRIM(c.NOM) <> ''
+              AND LOWER(RTRIM(t.EMAIL)) = LOWER(LTRIM(RTRIM({email})))
+            ORDER BY c.NOM
+            """).ToListAsync();
+
+        return resultats.FirstOrDefault();
+    }
+
+    public Task<List<SocieteDivaltoDto>> SocietesParEmailAsync(string dossier, string email) =>
+        _context.Database.SqlQuery<SocieteDivaltoDto>($"""
+            SELECT DISTINCT RTRIM(c.TIERS) AS Tiers, RTRIM(c.NOM) AS Nom,
+                   NULLIF(RTRIM(c.U_PRODUIT), '') AS Produit, NULLIF(RTRIM(c.U_VERSION), '') AS Version
+            FROM CLI c
+            WHERE c.DOS = {dossier}
+              AND RTRIM(c.NOM) <> ''
+              AND (LOWER(RTRIM(c.EMAIL)) = LOWER(LTRIM(RTRIM({email})))
+                   OR EXISTS (SELECT 1 FROM T2 t
+                              WHERE t.TIERS = c.TIERS AND t.DOS = c.DOS
+                                AND LOWER(RTRIM(t.EMAIL)) = LOWER(LTRIM(RTRIM({email})))))
+            ORDER BY Nom
+            """).ToListAsync();
+
+    public Task<List<string>> TiersAdminParEmailAsync(string dossier, string email) =>
+        _context.Database.SqlQuery<string>($"""
+            SELECT DISTINCT RTRIM(TIERS) AS Value
+            FROM T2
+            WHERE DOS = {dossier}
+              AND U_FLAG_ADMIN = 2
+              AND LOWER(RTRIM(EMAIL)) = LOWER(LTRIM(RTRIM({email})))
+            """).ToListAsync();
 }

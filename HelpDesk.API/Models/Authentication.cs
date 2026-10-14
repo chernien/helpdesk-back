@@ -41,6 +41,23 @@ public partial class Authentication
     /// <summary>Derniere consultation des notifications (non lues = evenements posterieurs).</summary>
     public DateTime? NotificationsLuesLe { get; set; }
 
+    /// <summary>Client : modules autorisés (liste séparée par des virgules). Vide = tous les modules.</summary>
+    public string? Modules { get; set; }
+
+    /// <summary>
+    /// Client : sociétés rattachées, en JSON [{"tiers":"...","nom":"..."}]. Un client peut
+    /// travailler pour plusieurs sociétés et choisir celle qu'il consulte. ClientTiers/SocieteNom
+    /// restent la société principale (la première) pour la compatibilité.
+    /// </summary>
+    public string? Societes { get; set; }
+
+    /// <summary>
+    /// Client administrateur de sa société (Sql/Authentication_AdminSociete.sql) : il voit ses tickets et peut
+    /// choisir un membre de son équipe pour voir les siens ; sinon, seulement les siens.
+    /// Pré-coché depuis Divalto (T2.U_FLAG_ADMIN = 2).
+    /// </summary>
+    public bool AdminSociete { get; set; }
+
     public virtual ICollection<AffectationAuthenticationProduit> Affectations { get; set; } = new List<AffectationAuthenticationProduit>();
 
     /// <summary>"Prenom Nom", ou Nom seul pour les comptes historiques.</summary>

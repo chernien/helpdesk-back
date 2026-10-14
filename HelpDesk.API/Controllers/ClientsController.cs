@@ -27,7 +27,21 @@ public class ClientsController : ControllerBase
         return Ok(await _clientService.RechercherSocietesAsync(recherche));
     }
 
+    /// <summary>Societe du contact portant cet email (204 si aucun contact Divalto ne correspond).</summary>
+    [HttpGet("societes/par-email")]
+    public async Task<ActionResult<SocieteClientDto>> SocieteParEmail([FromQuery] string? email)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return NoContent();
+        var societe = await _clientService.TrouverSocieteParEmailAsync(email);
+        return societe is null ? NoContent() : Ok(societe);
+    }
+
     /// <summary>Contacts (emails) d'une societe.</summary>
+    /// <summary>Sociétés (codes tiers) où ce contact a « Profil Admin helpdesk » coché dans Divalto (pré-coche le formulaire du compte).</summary>
+    [HttpGet("admin")]
+    public async Task<ActionResult<List<string>>> SocietesAdmin([FromQuery] string? email) =>
+        Ok(await _clientService.TiersAdminAsync(email ?? ""));
+
     [HttpGet("societes/{tiers}/contacts")]
     public async Task<ActionResult<List<ContactClientDto>>> Contacts(string tiers)
     {

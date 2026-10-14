@@ -10,7 +10,14 @@ public interface IUserRepository
     Task<Authentication?> GetByIdAsync(int id);
     /// <summary>Compte avec ses affectations produits (suivi des modifications).</summary>
     Task<Authentication?> GetAvecProduitsAsync(int id);
+    Task<Authentication?> GetAvecProduitsParEmailAsync(string email);
     Task<Authentication?> GetByUsernameAsync(string username);
+    /// <summary>E-mails des administrateurs actifs (pour les mettre en copie des notifications).</summary>
+    Task<List<string>> EmailsAdminsAsync();
+    /// <summary>Premier produit affecté à un utilisateur (repli produit pour l'agent IA).</summary>
+    Task<string?> PremierProduitAffecteAsync(int userId);
+    /// <summary>Recherche un compte par nom (repli de l'agent IA quand l'e-mail est inconnu).</summary>
+    Task<Authentication?> TrouverParNomAsync(string nom);
     Task<bool> EmailUtiliseAsync(string email, int? saufId = null);
     /// <summary>Compte dont l'email correspond, sans tenir compte de la casse (T2 contient des majuscules).</summary>
     Task<Authentication?> GetByEmailAsync(string email);
@@ -49,6 +56,37 @@ public class UserRepository : IUserRepository
         _context.Authentication
             .Include(u => u.Affectations).ThenInclude(a => a.Product)
             .FirstOrDefaultAsync(u => u.Id == id);
+
+    public Task<Authentication?> GetAvecProduitsParEmailAsync(string email)
+    {
+        var cible = email.Trim().ToLower();
+        return _context.Authentication
+            .Include(u => u.Affectations).ThenInclude(a => a.Product)
+            .FirstOrDefaultAsync(u => u.Username != null && u.Username.Trim().ToLower() == cible);
+    }
+
+    public Task<Authentication?> TrouverParNomAsync(string nom)
+    {
+        var s = (nom ?? "").Trim();
+        if (s.Length < 3) return Task.FromResult<Authentication?>(null);
+        return _context.Authentication.AsNoTracking().FirstOrDefaultAsync(u =>
+            (u.Nom != null && u.Nom.Contains(s)) ||
+            (u.Prenom != null && u.Nom != null && (u.Prenom + " " + u.Nom).Contains(s)) ||
+            (u.Prenom != null && u.Nom != null && (u.Nom + " " + u.Prenom).Contains(s)));
+    }
+
+    public Task<string?> PremierProduitAffecteAsync(int userId) =>
+        _context.AffectationAuthenticationProduit.AsNoTracking()
+            .Where(a => a.UserId == userId)
+            .OrderBy(a => a.ProductId)
+            .Select(a => a.Product.Nom)
+            .FirstOrDefaultAsync();
+
+    public Task<List<string>> EmailsAdminsAsync() =>
+        _context.Authentication.AsNoTracking()
+            .Where(u => u.Role == "ROLE_ADMIN" && u.Enabled == true && u.Username != null && u.Username.Contains("@"))
+            .Select(u => u.Username!)
+            .ToListAsync();
 
     // L'email est l'identifiant : AMINE@MEDIASOFT.TN et amine@mediasoft.tn sont le meme compte.
     public Task<Authentication?> GetByUsernameAsync(string username) => GetByEmailAsync(username);
