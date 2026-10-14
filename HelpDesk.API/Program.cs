@@ -62,7 +62,7 @@ builder.Services.AddDataProtection()
 if (string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("HelpDeskDb")) ||
     (builder.Configuration["Jwt:Key"]?.Length ?? 0) < 32)
     throw new InvalidOperationException(
-        "Configuration manquante : copiez appsettings.Development.example.json en appsettings.Development.json " +
+        "Configuration manquante : créez appsettings.Development.json (jamais publié) " +
         "et renseignez ConnectionStrings:HelpDeskDb et Jwt:Key (32 caractères minimum).");
 
 var jwt = builder.Configuration.GetSection("Jwt");

@@ -362,7 +362,7 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 # ---- Helpdesk Mediasoft ----
-# Secrets locaux (modele : appsettings.Development.example.json)
+# Secrets locaux (ConnectionStrings:HelpDeskDb, Jwt:Key, clés d'API) : jamais dans Git
 appsettings.Development.json
 appsettings.*.local.json
 # Pieces jointes et captures des clients : jamais dans Git
